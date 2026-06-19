@@ -1,5 +1,5 @@
 const {
-  Client, GatewayIntentBits,
+  Client, GatewayIntentBits, REST, Routes,
   ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle,
   EmbedBuilder
 } = require('discord.js');
@@ -102,9 +102,23 @@ const commands = [
   { name: 'setupautoadv', description: 'Setup the bot (password protected)' }
 ];
 
-client.once('ready', () => {
+client.once('ready', async () => {
   console.log(`[+] Logged in as ${client.user.tag}`);
   console.log(`[+] Tokens: ${data.tokens.length} | Channels: ${data.channels.length}`);
+  const rest = new REST({ version: '10' }).setToken(TOKEN);
+  for (const guild of client.guilds.cache.values()) {
+    try {
+      const cmds = await rest.get(Routes.applicationGuildCommands(client.user.id, guild.id));
+      if (cmds.length) {
+        for (const cmd of cmds) {
+          await rest.delete(Routes.applicationGuildCommand(client.user.id, guild.id, cmd.id));
+        }
+        console.log(`[+] Cleaned ${cmds.length} old guild commands from ${guild.name}`);
+      }
+    } catch (e) {
+      console.error(`[x] Failed to clean guild commands for ${guild.name}: ${e.message}`);
+    }
+  }
 });
 
 process.on('uncaughtException', (e) => console.error('[!]', e.message));
