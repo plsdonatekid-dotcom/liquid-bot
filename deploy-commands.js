@@ -1,0 +1,100 @@
+const { REST, Routes } = require('discord.js');
+
+const TOKEN = process.env.DISCORD_BOT_TOKEN;
+const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1516747796114444338';
+
+const commands = [
+  {
+    name: 'help',
+    description: 'Show all available commands'
+  },
+  {
+    name: 'keyclaim',
+    description: 'Claim a key to use the bot',
+    options: [{
+      type: 3,
+      name: 'key',
+      description: 'The key to claim',
+      required: true
+    }]
+  },
+  {
+    name: 'addtoken',
+    description: 'Add an authorize token (max 50)',
+    options: [
+      { type: 3, name: 'name', description: 'Name for the token', required: true },
+      { type: 3, name: 'token', description: 'The Discord user token', required: true }
+    ]
+  },
+  {
+    name: 'addchannel',
+    description: 'Add a channel ID (max 100)',
+    options: [
+      { type: 3, name: 'name', description: 'Name for the channel', required: true },
+      { type: 3, name: 'id', description: 'The channel ID', required: true }
+    ]
+  },
+  {
+    name: 'deltoken',
+    description: 'Delete a specified token',
+    options: [{
+      type: 3, name: 'name', description: 'Name of the token to delete', required: true
+    }]
+  },
+  {
+    name: 'delchannel',
+    description: 'Delete a specified channel',
+    options: [{
+      type: 3, name: 'name', description: 'Name of the channel to delete', required: true
+    }]
+  },
+  {
+    name: 'listtokens',
+    description: 'List all added tokens'
+  },
+  {
+    name: 'listchannels',
+    description: 'List all added channels'
+  },
+  {
+    name: 'setmsg',
+    description: 'Set the advertise message (opens a modal)'
+  },
+  {
+    name: 'startauto',
+    description: 'Start the auto advertising'
+  },
+  {
+    name: 'stopauto',
+    description: 'Stop the auto advertising'
+  },
+  {
+    name: 'keycreate',
+    description: 'Create a new key (password protected)',
+    options: [{
+      type: 4, name: 'hours', description: 'Key duration in hours', required: true
+    }]
+  },
+  {
+    name: 'setupautoadv',
+    description: 'Setup the bot (password protected)'
+  }
+];
+
+async function deploy() {
+  if (!CLIENT_ID) {
+    console.error('[!] Set CLIENT_ID in deploy-commands.js first');
+    console.error('[!] Get it from Discord Developer Portal -> Bot -> Client ID');
+    process.exit(1);
+  }
+  const rest = new REST({ version: '10' }).setToken(TOKEN);
+  try {
+    console.log('[+] Registering slash commands...');
+    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
+    console.log('[+] Commands registered successfully!');
+  } catch (e) {
+    console.error('[x] Failed to register commands:', e.message);
+  }
+}
+
+deploy();

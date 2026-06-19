@@ -1,0 +1,13 @@
+{
+  "name": "auto-advertise-bot",
+  "version": "1.0.0",
+  "description": "Auto Advertise Discord Bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "deploy": "node deploy-commands.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.18.0"
+  }
+}
