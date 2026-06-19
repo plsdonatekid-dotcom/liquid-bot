@@ -1,0 +1,7 @@
+app = "liquid-bot"
+primary_region = "iad"
+
+[build]
+
+[processes]
+  app = "npm start"

@@ -325,8 +325,8 @@ client.on('interactionCreate', async (i) => {
       const password = i.fields.getTextInputValue('setup_password');
       if (password !== PASSWORD) return i.reply({ content: 'Incorrect password. Operation cancelled.', ephemeral: true });
       let status = '**Setup Summary**\n';
-      status += `Tokens: ${data.tokens.length}/${MAX_TOKENS}\n`;
-      status += `Channels: ${data.channels.length}/${MAX_CHANNELS}\n`;
+      status += `Tokens: ${data.tokens.length}\n`;
+      status += `Channels: ${data.channels.length}\n`;
       status += `Message: ${data.msg ? 'Set' : 'Not set'}\n`;
       if (data.tokens.length && data.channels.length && data.msg) {
         status += '\nAll configured. Use /startauto to begin.';
@@ -337,5 +337,12 @@ client.on('interactionCreate', async (i) => {
     }
   }
 });
+
+const http = require('http');
+const PORT = process.env.PORT || 8080;
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ status: 'ok', running: data.running }));
+}).listen(PORT, () => console.log(`[+] Health server on port ${PORT}`));
 
 client.login(TOKEN);
