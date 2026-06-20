@@ -128,7 +128,7 @@ client.on('interactionCreate', async (i) => {
   if (i.isCommand()) {
     const { commandName, options } = i;
 
-    if (commandName !== 'help' && commandName !== 'keyclaim') {
+    if (commandName !== 'help' && commandName !== 'keyclaim' && commandName !== 'keycreate' && commandName !== 'setupautoadv') {
       if (!getValidKey(i.user.id)) {
         return i.reply({ content: 'You need a valid key. Use `/keyclaim <key>` to claim one, or your key has expired.', ephemeral: true });
       }

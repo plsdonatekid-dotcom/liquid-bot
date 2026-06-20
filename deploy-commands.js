@@ -2,6 +2,7 @@ const { REST, Routes } = require('discord.js');
 
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1516747796114444338';
+const GUILD_ID = process.env.DISCORD_GUILD_ID;
 
 const commands = [
   {
@@ -89,8 +90,11 @@ async function deploy() {
   }
   const rest = new REST({ version: '10' }).setToken(TOKEN);
   try {
-    console.log('[+] Registering slash commands...');
-    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
+    const route = GUILD_ID
+      ? Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID)
+      : Routes.applicationCommands(CLIENT_ID);
+    console.log(`[+] Registering slash commands${GUILD_ID ? ` in guild ${GUILD_ID}` : ' globally'}...`);
+    await rest.put(route, { body: commands });
     console.log('[+] Commands registered successfully!');
   } catch (e) {
     console.error('[x] Failed to register commands:', e.message);
