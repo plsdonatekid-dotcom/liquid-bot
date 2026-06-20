@@ -15,12 +15,24 @@
 - UptimeRobot (free) → Add HTTP monitor → paste Render URL every 5 min
 
 ## After deploy, in Discord:
-- /keycreate 24 → enter password
+- /keycreate <hours> → enter password
 - /keyclaim <key>
 - /addtoken <name> <token>
 - /addchannel <name> <id>
+- /deltoken <name> — delete a token
+- /delchannel <name> — delete a channel
+- /listtokens — view your tokens
+- /listchannels — view your channels
 - /setmsg (opens modal for ad message)
-- /startauto
+- /startauto — starts auto-advertise (reads channel slowmode, sends first msg immediately)
+- /stopauto — stops auto-advertise
+- /help — shows all commands
+
+## Features:
+- **Per-user data isolation** — each user has their own tokens, channels, and message. No user can see or modify another's data.
+- **Slowmode-aware scheduling** — bot reads each channel's slowmode and calculates the optimal interval (slowmode - 5 seconds).
+- **First message sent immediately** on /startauto, subsequent messages respect slowmode.
+- **Notifications** — sends "Auto advertise started" / "Auto advertise stopped" to the first channel.
 
 ## Bot link (GitHub):
 https://github.com/plsdonatekid-dotcom/liquid-bot
