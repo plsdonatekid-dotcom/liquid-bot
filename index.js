@@ -13,11 +13,26 @@ const PASSWORD = process.env.BOT_PASSWORD;
 
 let data = fs.existsSync(CONFIG)
   ? JSON.parse(fs.readFileSync(CONFIG, 'utf8'))
-  : { keys: [], tokens: [], channels: [], msg: '', running: false };
-let autoInterval = null;
+  : { keys: [], users: {} };
+
+// Migrate from old flat format to per-user
+if (data.tokens) {
+  const ownerId = data.keys.length && data.keys[0].claimedBy ? data.keys[0].claimedBy : 'migrated';
+  data.users = {};
+  data.users[ownerId] = { tokens: data.tokens, channels: data.channels || [], msg: data.msg || '', running: false };
+  delete data.tokens; delete data.channels; delete data.msg; delete data.running;
+  save();
+}
+
+let autoIntervals = {};
 const pendingKeyHours = new Map();
 
 function save() { fs.writeFileSync(CONFIG, JSON.stringify(data, null, 2)); }
+
+function getUserData(userId) {
+  if (!data.users[userId]) { data.users[userId] = { tokens: [], channels: [], msg: '', running: false }; save(); }
+  return data.users[userId];
+}
 
 function genKey() {
   const c = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -50,7 +65,8 @@ function getValidKey(userId) {
   return valid;
 }
 
-if (data.running) { data.running = false; save(); }
+for (const uid of Object.keys(data.users)) { if (data.users[uid].running) { data.users[uid].running = false; } }
+save();
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
@@ -63,6 +79,15 @@ async function sendViaToken(token, channelId, content) {
     body: JSON.stringify({ content })
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
+async function getChannelSlowmode(token, channelId) {
+  const res = await fetch(`https://discord.com/api/v10/channels/${channelId}`, {
+    headers: { 'Authorization': token }
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const ch = await res.json();
+  return ch.rate_limit_per_user || 0;
 }
 
 async function dmUserViaToken(token, message) {
@@ -99,12 +124,11 @@ const commands = [
   { name: 'startauto', description: 'Start the auto advertising' },
   { name: 'stopauto', description: 'Stop the auto advertising' },
   { name: 'keycreate', description: 'Create a new key (password protected)', options: [{ type: 4, name: 'hours', description: 'Key duration in hours', required: true }] },
-  { name: 'setupautoadv', description: 'Setup the bot (password protected)' }
 ];
 
 client.once('ready', async () => {
   console.log(`[+] Logged in as ${client.user.tag}`);
-  console.log(`[+] Tokens: ${data.tokens.length} | Channels: ${data.channels.length}`);
+  console.log(`[+] Users: ${Object.keys(data.users).length}`);
   const rest = new REST({ version: '10' }).setToken(TOKEN);
   for (const guild of client.guilds.cache.values()) {
     try {
@@ -128,7 +152,7 @@ client.on('interactionCreate', async (i) => {
   if (i.isCommand()) {
     const { commandName, options } = i;
 
-    if (commandName !== 'help' && commandName !== 'keyclaim' && commandName !== 'keycreate' && commandName !== 'setupautoadv') {
+    if (commandName !== 'help' && commandName !== 'keyclaim' && commandName !== 'keycreate') {
       if (!getValidKey(i.user.id)) {
         return i.reply({ content: 'You need a valid key. Use `/keyclaim <key>` to claim one, or your key has expired.', ephemeral: true });
       }
@@ -151,7 +175,6 @@ client.on('interactionCreate', async (i) => {
             '`/startauto` - Start auto advertising\n' +
             '`/stopauto` - Stop auto advertising\n' +
             '`/keycreate <hours>` - Create a key\n' +
-            '`/setupautoadv` - Setup the bot\n' +
             '`/help` - Show this message'
           )
           .setColor(0x5865F2);
@@ -172,56 +195,63 @@ client.on('interactionCreate', async (i) => {
       case 'addtoken': {
         const name = options.getString('name');
         const token = options.getString('token');
-        if (data.tokens.find(t => t.name === name))
+        const ud = getUserData(i.user.id);
+        if (ud.tokens.find(t => t.name === name))
           return i.reply({ content: 'Token with this name already exists.', ephemeral: true });
-        data.tokens.push({ name, token });
+        ud.tokens.push({ name, token });
         save();
-        return i.reply({ content: `Token "${name}" added. (${data.tokens.length} total)`, ephemeral: true });
+        return i.reply({ content: `Token "${name}" added. (${ud.tokens.length} total)`, ephemeral: true });
       }
 
       case 'addchannel': {
         const name = options.getString('name');
         const id = options.getString('id');
-        if (data.channels.find(c => c.name === name))
+        const ud = getUserData(i.user.id);
+        if (ud.channels.find(c => c.name === name))
           return i.reply({ content: 'Channel with this name already exists.', ephemeral: true });
-        data.channels.push({ name, id });
+        ud.channels.push({ name, id });
         save();
-        return i.reply({ content: `Channel "${name}" added. (${data.channels.length} total)`, ephemeral: true });
+        return i.reply({ content: `Channel "${name}" added. (${ud.channels.length} total)`, ephemeral: true });
       }
 
       case 'deltoken': {
         const name = options.getString('name');
-        const idx = data.tokens.findIndex(t => t.name === name);
+        const ud = getUserData(i.user.id);
+        const idx = ud.tokens.findIndex(t => t.name === name);
         if (idx === -1) return i.reply({ content: 'Token not found.', ephemeral: true });
-        data.tokens.splice(idx, 1);
+        ud.tokens.splice(idx, 1);
         save();
         return i.reply({ content: `Token "${name}" deleted.`, ephemeral: true });
       }
 
       case 'delchannel': {
         const name = options.getString('name');
-        const idx = data.channels.findIndex(c => c.name === name);
+        const ud = getUserData(i.user.id);
+        const idx = ud.channels.findIndex(c => c.name === name);
         if (idx === -1) return i.reply({ content: 'Channel not found.', ephemeral: true });
-        data.channels.splice(idx, 1);
+        ud.channels.splice(idx, 1);
         save();
         return i.reply({ content: `Channel "${name}" deleted.`, ephemeral: true });
       }
 
       case 'listtokens': {
-        if (!data.tokens.length)
-          return i.reply({ content: 'No tokens added.', ephemeral: true });
-        const list = data.tokens.map((t, i) => `${i + 1}. ${t.name}`).join('\n');
-        return i.reply({ content: `**Tokens (${data.tokens.length}):**\n${list}`, ephemeral: true });
+        const ud = getUserData(i.user.id);
+        if (!ud.tokens.length)
+          return i.reply({ content: 'You have no tokens added.', ephemeral: true });
+        const list = ud.tokens.map((t, i) => `${i + 1}. ${t.name} — \`${t.token}\``).join('\n');
+        return i.reply({ content: `**Your Tokens (${ud.tokens.length}):**\n${list}`, ephemeral: true });
       }
 
       case 'listchannels': {
-        if (!data.channels.length)
-          return i.reply({ content: 'No channels added.', ephemeral: true });
-        const list = data.channels.map((c, i) => `${i + 1}. ${c.name} - ${c.id}`).join('\n');
-        return i.reply({ content: `**Channels (${data.channels.length}):**\n${list}`, ephemeral: true });
+        const ud = getUserData(i.user.id);
+        if (!ud.channels.length)
+          return i.reply({ content: 'You have no channels added.', ephemeral: true });
+        const list = ud.channels.map((c, i) => `${i + 1}. ${c.name} — \`${c.id}\``).join('\n');
+        return i.reply({ content: `**Your Channels (${ud.channels.length}):**\n${list}`, ephemeral: true });
       }
 
       case 'setmsg': {
+        const ud = getUserData(i.user.id);
         const modal = new ModalBuilder()
           .setCustomId('setmsg_modal')
           .setTitle('Set Advertise Message');
@@ -230,58 +260,77 @@ client.on('interactionCreate', async (i) => {
           .setLabel('Enter the message to advertise')
           .setStyle(TextInputStyle.Paragraph)
           .setRequired(true)
-          .setValue(data.msg || '');
+          .setValue(ud.msg || '');
         modal.addComponents(new ActionRowBuilder().addComponents(input));
         return i.showModal(modal);
       }
 
       case 'startauto': {
-        if (!data.tokens.length) return i.reply({ content: 'No authorize tokens. Use /addtoken first.', ephemeral: true });
-        if (!data.channels.length) return i.reply({ content: 'No channels. Use /addchannel first.', ephemeral: true });
-        if (!data.msg) return i.reply({ content: 'No message. Use /setmsg first.', ephemeral: true });
-        if (autoInterval) return i.reply({ content: 'Already running. Use /stopauto first.', ephemeral: true });
+        const ud = getUserData(i.user.id);
+        if (!ud.tokens.length) return i.reply({ content: 'No authorize tokens. Use /addtoken first.', ephemeral: true });
+        if (!ud.channels.length) return i.reply({ content: 'No channels. Use /addchannel first.', ephemeral: true });
+        if (!ud.msg) return i.reply({ content: 'No message. Use /setmsg first.', ephemeral: true });
+        if (autoIntervals[i.user.id]) return i.reply({ content: 'Already running. Use /stopauto first.', ephemeral: true });
 
-        data.running = true;
-        save();
-        await i.reply({ content: 'Starting auto advertise...', ephemeral: true });
-
-        for (const t of data.tokens) {
-          try { await dmUserViaToken(t.token, 'Auto advertise has started.'); }
-          catch (e) { console.error(`[x] Failed to notify ${t.name}: ${e.message}`); }
+        let maxSlowmode = 0;
+        for (const ch of ud.channels) {
+          try {
+            const sm = await getChannelSlowmode(ud.tokens[0].token, ch.id);
+            if (sm > maxSlowmode) maxSlowmode = sm;
+          } catch (e) {
+            console.error(`[x] Failed to get slowmode for ${ch.name}: ${e.message}`);
+          }
         }
 
+        const numTokens = ud.tokens.length;
+        let intervalMs = 30000;
+        if (maxSlowmode > 5) {
+          const perChannelTarget = (maxSlowmode - 5) * 1000;
+          intervalMs = Math.max(Math.floor(perChannelTarget / numTokens), 5000);
+        }
+
+        ud.running = true;
+        save();
+
+        try { await sendViaToken(ud.tokens[0].token, ud.channels[0].id, 'Auto advertise started'); }
+        catch (e) { console.error(`[x] Failed to send start notification: ${e.message}`); }
+
         let ti = 0, ci = 0;
-        autoInterval = setInterval(async () => {
-          if (!data.running) {
-            if (autoInterval) { clearInterval(autoInterval); autoInterval = null; }
+        async function sendNext() {
+          if (!ud.running) {
+            if (autoIntervals[i.user.id]) { clearInterval(autoIntervals[i.user.id]); delete autoIntervals[i.user.id]; }
             return;
           }
-          const t = data.tokens[ti];
-          const ch = data.channels[ci];
+          const t = ud.tokens[ti];
+          const ch = ud.channels[ci];
           if (!t || !ch) { ti = 0; ci = 0; return; }
           try {
-            await sendViaToken(t.token, ch.id, data.msg);
-            console.log(`[+] Sent via ${t.name} to ${ch.name}`);
+            await sendViaToken(t.token, ch.id, ud.msg);
+            console.log(`[+] ${i.user.id}: Sent via ${t.name} to ${ch.name}`);
           } catch (e) {
-            console.error(`[x] ${t.name} -> ${ch.name}: ${e.message}`);
+            console.error(`[x] ${i.user.id}: ${t.name} -> ${ch.name}: ${e.message}`);
           }
-          ti = (ti + 1) % data.tokens.length;
-          if (ti === 0) ci = (ci + 1) % data.channels.length;
-        }, 30000);
+          ti = (ti + 1) % ud.tokens.length;
+          if (ti === 0) ci = (ci + 1) % ud.channels.length;
+        }
+        await sendNext();
+        autoIntervals[i.user.id] = setInterval(sendNext, intervalMs);
+        await i.reply({
+          content: `Auto advertise started. (Slowmode: ${maxSlowmode}s, interval: ${intervalMs / 1000}s)`,
+          ephemeral: true
+        });
         return;
       }
 
       case 'stopauto': {
-        if (!autoInterval) return i.reply({ content: 'Auto advertise is not running.', ephemeral: true });
-        data.running = false;
-        if (autoInterval) { clearInterval(autoInterval); autoInterval = null; }
+        const ud = getUserData(i.user.id);
+        if (!autoIntervals[i.user.id]) return i.reply({ content: 'Auto advertise is not running.', ephemeral: true });
+        ud.running = false;
+        if (autoIntervals[i.user.id]) { clearInterval(autoIntervals[i.user.id]); delete autoIntervals[i.user.id]; }
         save();
-        await i.reply({ content: 'Stopping auto advertise...', ephemeral: true });
-        for (const t of data.tokens) {
-          try { await dmUserViaToken(t.token, 'Auto advertise has stopped.'); }
-          catch (e) { console.error(`[x] Failed to notify ${t.name}: ${e.message}`); }
-        }
-        return;
+        try { await sendViaToken(ud.tokens[0].token, ud.channels[0].id, 'Auto advertise stopped'); }
+        catch (e) { console.error(`[x] Failed to send stop notification: ${e.message}`); }
+        return i.reply({ content: 'Auto advertise stopped.', ephemeral: true });
       }
 
       case 'keycreate': {
@@ -300,18 +349,7 @@ client.on('interactionCreate', async (i) => {
         return i.showModal(modal);
       }
 
-      case 'setupautoadv': {
-        const modal = new ModalBuilder()
-          .setCustomId('setup_modal')
-          .setTitle('Setup Auto Advertise');
-        const input = new TextInputBuilder()
-          .setCustomId('setup_password')
-          .setLabel('Enter the setup password')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true);
-        modal.addComponents(new ActionRowBuilder().addComponents(input));
-        return i.showModal(modal);
-      }
+
     }
   }
 
@@ -319,7 +357,8 @@ client.on('interactionCreate', async (i) => {
     if (i.customId === 'setmsg_modal') {
       const msg = i.fields.getTextInputValue('msg_input');
       if (!msg) return i.reply({ content: 'Message cannot be empty.', ephemeral: true });
-      data.msg = msg;
+      const ud = getUserData(i.user.id);
+      ud.msg = msg;
       save();
       return i.reply({ content: 'Advertise message set.', ephemeral: true });
     }
@@ -335,20 +374,7 @@ client.on('interactionCreate', async (i) => {
       return i.reply({ content: `Key created: **${key}** - ${hours} hour(s)`, ephemeral: true });
     }
 
-    if (i.customId === 'setup_modal') {
-      const password = i.fields.getTextInputValue('setup_password');
-      if (password !== PASSWORD) return i.reply({ content: 'Incorrect password. Operation cancelled.', ephemeral: true });
-      let status = '**Setup Summary**\n';
-      status += `Tokens: ${data.tokens.length}\n`;
-      status += `Channels: ${data.channels.length}\n`;
-      status += `Message: ${data.msg ? 'Set' : 'Not set'}\n`;
-      if (data.tokens.length && data.channels.length && data.msg) {
-        status += '\nAll configured. Use /startauto to begin.';
-      } else {
-        status += '\nSome items are missing. Use /addtoken, /addchannel, /setmsg to configure.';
-      }
-      return i.reply({ content: status, ephemeral: true });
-    }
+
   }
 });
 
@@ -356,7 +382,8 @@ const http = require('http');
 const PORT = process.env.PORT || 8080;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ status: 'ok', running: data.running }));
+  const runningCount = Object.values(data.users).filter(u => u.running).length;
+  res.end(JSON.stringify({ status: 'ok', running: runningCount }));
 }).listen(PORT, () => console.log(`[+] Health server on port ${PORT}`));
 
 client.login(TOKEN);

@@ -76,10 +76,6 @@ const commands = [
       type: 4, name: 'hours', description: 'Key duration in hours', required: true
     }]
   },
-  {
-    name: 'setupautoadv',
-    description: 'Setup the bot (password protected)'
-  }
 ];
 
 async function deploy() {
