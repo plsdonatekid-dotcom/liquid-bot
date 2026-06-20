@@ -1,7 +1,7 @@
 const {
   Client, GatewayIntentBits, REST, Routes,
   ActionRowBuilder, ModalBuilder, TextInputBuilder, TextInputStyle,
-  EmbedBuilder
+  EmbedBuilder, MessageFlags
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
@@ -154,7 +154,7 @@ client.on('interactionCreate', async (i) => {
 
     if (commandName !== 'help' && commandName !== 'keyclaim' && commandName !== 'keycreate') {
       if (!getValidKey(i.user.id)) {
-        return i.reply({ content: 'You need a valid key. Use `/keyclaim <key>` to claim one, or your key has expired.', ephemeral: true });
+        return i.reply({ content: 'You need a valid key. Use `/keyclaim <key>` to claim one, or your key has expired.', flags: MessageFlags.Ephemeral });
       }
     }
 
@@ -178,18 +178,18 @@ client.on('interactionCreate', async (i) => {
             '`/help` - Show this message'
           )
           .setColor(0x5865F2);
-        return i.reply({ embeds: [embed], ephemeral: true });
+        return i.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
 
       case 'keyclaim': {
         const key = options.getString('key');
         const found = data.keys.find(k => k.code === key && !k.claimed);
-        if (!found) return i.reply({ content: 'Invalid or already claimed key.', ephemeral: true });
+        if (!found) return i.reply({ content: 'Invalid or already claimed key.', flags: MessageFlags.Ephemeral });
         found.claimed = true;
         found.claimedBy = i.user.id;
         found.claimedAt = Date.now();
         save();
-        return i.reply({ content: `Key claimed. Expires in ${found.hours} hour(s).`, ephemeral: true });
+        return i.reply({ content: `Key claimed. Expires in ${found.hours} hour(s).`, flags: MessageFlags.Ephemeral });
       }
 
       case 'addtoken': {
@@ -197,10 +197,10 @@ client.on('interactionCreate', async (i) => {
         const token = options.getString('token');
         const ud = getUserData(i.user.id);
         if (ud.tokens.find(t => t.name === name))
-          return i.reply({ content: 'Token with this name already exists.', ephemeral: true });
+          return i.reply({ content: 'Token with this name already exists.', flags: MessageFlags.Ephemeral });
         ud.tokens.push({ name, token });
         save();
-        return i.reply({ content: `Token "${name}" added. (${ud.tokens.length} total)`, ephemeral: true });
+        return i.reply({ content: `Token "${name}" added. (${ud.tokens.length} total)`, flags: MessageFlags.Ephemeral });
       }
 
       case 'addchannel': {
@@ -208,46 +208,46 @@ client.on('interactionCreate', async (i) => {
         const id = options.getString('id');
         const ud = getUserData(i.user.id);
         if (ud.channels.find(c => c.name === name))
-          return i.reply({ content: 'Channel with this name already exists.', ephemeral: true });
+          return i.reply({ content: 'Channel with this name already exists.', flags: MessageFlags.Ephemeral });
         ud.channels.push({ name, id });
         save();
-        return i.reply({ content: `Channel "${name}" added. (${ud.channels.length} total)`, ephemeral: true });
+        return i.reply({ content: `Channel "${name}" added. (${ud.channels.length} total)`, flags: MessageFlags.Ephemeral });
       }
 
       case 'deltoken': {
         const name = options.getString('name');
         const ud = getUserData(i.user.id);
         const idx = ud.tokens.findIndex(t => t.name === name);
-        if (idx === -1) return i.reply({ content: 'Token not found.', ephemeral: true });
+        if (idx === -1) return i.reply({ content: 'Token not found.', flags: MessageFlags.Ephemeral });
         ud.tokens.splice(idx, 1);
         save();
-        return i.reply({ content: `Token "${name}" deleted.`, ephemeral: true });
+        return i.reply({ content: `Token "${name}" deleted.`, flags: MessageFlags.Ephemeral });
       }
 
       case 'delchannel': {
         const name = options.getString('name');
         const ud = getUserData(i.user.id);
         const idx = ud.channels.findIndex(c => c.name === name);
-        if (idx === -1) return i.reply({ content: 'Channel not found.', ephemeral: true });
+        if (idx === -1) return i.reply({ content: 'Channel not found.', flags: MessageFlags.Ephemeral });
         ud.channels.splice(idx, 1);
         save();
-        return i.reply({ content: `Channel "${name}" deleted.`, ephemeral: true });
+        return i.reply({ content: `Channel "${name}" deleted.`, flags: MessageFlags.Ephemeral });
       }
 
       case 'listtokens': {
         const ud = getUserData(i.user.id);
         if (!ud.tokens.length)
-          return i.reply({ content: 'You have no tokens added.', ephemeral: true });
+          return i.reply({ content: 'You have no tokens added.', flags: MessageFlags.Ephemeral });
         const list = ud.tokens.map((t, i) => `${i + 1}. ${t.name} — \`${t.token}\``).join('\n');
-        return i.reply({ content: `**Your Tokens (${ud.tokens.length}):**\n${list}`, ephemeral: true });
+        return i.reply({ content: `**Your Tokens (${ud.tokens.length}):**\n${list}`, flags: MessageFlags.Ephemeral });
       }
 
       case 'listchannels': {
         const ud = getUserData(i.user.id);
         if (!ud.channels.length)
-          return i.reply({ content: 'You have no channels added.', ephemeral: true });
+          return i.reply({ content: 'You have no channels added.', flags: MessageFlags.Ephemeral });
         const list = ud.channels.map((c, i) => `${i + 1}. ${c.name} — \`${c.id}\``).join('\n');
-        return i.reply({ content: `**Your Channels (${ud.channels.length}):**\n${list}`, ephemeral: true });
+        return i.reply({ content: `**Your Channels (${ud.channels.length}):**\n${list}`, flags: MessageFlags.Ephemeral });
       }
 
       case 'setmsg': {
@@ -267,10 +267,10 @@ client.on('interactionCreate', async (i) => {
 
       case 'startauto': {
         const ud = getUserData(i.user.id);
-        if (!ud.tokens.length) return i.reply({ content: 'No authorize tokens. Use /addtoken first.', ephemeral: true });
-        if (!ud.channels.length) return i.reply({ content: 'No channels. Use /addchannel first.', ephemeral: true });
-        if (!ud.msg) return i.reply({ content: 'No message. Use /setmsg first.', ephemeral: true });
-        if (autoIntervals[i.user.id]) return i.reply({ content: 'Already running. Use /stopauto first.', ephemeral: true });
+        if (!ud.tokens.length) return i.reply({ content: 'No authorize tokens. Use /addtoken first.', flags: MessageFlags.Ephemeral });
+        if (!ud.channels.length) return i.reply({ content: 'No channels. Use /addchannel first.', flags: MessageFlags.Ephemeral });
+        if (!ud.msg) return i.reply({ content: 'No message. Use /setmsg first.', flags: MessageFlags.Ephemeral });
+        if (autoIntervals[i.user.id]) return i.reply({ content: 'Already running. Use /stopauto first.', flags: MessageFlags.Ephemeral });
 
         let maxSlowmode = 0;
         for (const ch of ud.channels) {
@@ -317,25 +317,25 @@ client.on('interactionCreate', async (i) => {
         autoIntervals[i.user.id] = setInterval(sendNext, intervalMs);
         await i.reply({
           content: `Auto advertise started. (Slowmode: ${maxSlowmode}s, interval: ${intervalMs / 1000}s)`,
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
         return;
       }
 
       case 'stopauto': {
         const ud = getUserData(i.user.id);
-        if (!autoIntervals[i.user.id]) return i.reply({ content: 'Auto advertise is not running.', ephemeral: true });
+        if (!autoIntervals[i.user.id]) return i.reply({ content: 'Auto advertise is not running.', flags: MessageFlags.Ephemeral });
         ud.running = false;
         if (autoIntervals[i.user.id]) { clearInterval(autoIntervals[i.user.id]); delete autoIntervals[i.user.id]; }
         save();
         try { await sendViaToken(ud.tokens[0].token, ud.channels[0].id, 'Auto advertise stopped'); }
         catch (e) { console.error(`[x] Failed to send stop notification: ${e.message}`); }
-        return i.reply({ content: 'Auto advertise stopped.', ephemeral: true });
+        return i.reply({ content: 'Auto advertise stopped.', flags: MessageFlags.Ephemeral });
       }
 
       case 'keycreate': {
         const hours = options.getInteger('hours');
-        if (!hours || hours < 1) return i.reply({ content: 'Hours must be at least 1.', ephemeral: true });
+        if (!hours || hours < 1) return i.reply({ content: 'Hours must be at least 1.', flags: MessageFlags.Ephemeral });
         const modal = new ModalBuilder()
           .setCustomId('keycreate_modal')
           .setTitle('Create Key');
@@ -356,22 +356,22 @@ client.on('interactionCreate', async (i) => {
   if (i.isModalSubmit()) {
     if (i.customId === 'setmsg_modal') {
       const msg = i.fields.getTextInputValue('msg_input');
-      if (!msg) return i.reply({ content: 'Message cannot be empty.', ephemeral: true });
+      if (!msg) return i.reply({ content: 'Message cannot be empty.', flags: MessageFlags.Ephemeral });
       const ud = getUserData(i.user.id);
       ud.msg = msg;
       save();
-      return i.reply({ content: 'Advertise message set.', ephemeral: true });
+      return i.reply({ content: 'Advertise message set.', flags: MessageFlags.Ephemeral });
     }
 
     if (i.customId === 'keycreate_modal') {
       const password = i.fields.getTextInputValue('keycreate_password');
       const hours = pendingKeyHours.get(i.user.id) || 1;
       pendingKeyHours.delete(i.user.id);
-      if (password !== PASSWORD) return i.reply({ content: 'Incorrect password. Operation cancelled.', ephemeral: true });
+      if (password !== PASSWORD) return i.reply({ content: 'Incorrect password. Operation cancelled.', flags: MessageFlags.Ephemeral });
       const key = genKey();
       data.keys.push({ code: key, hours, claimed: false });
       save();
-      return i.reply({ content: `Key created: **${key}** - ${hours} hour(s)`, ephemeral: true });
+      return i.reply({ content: `Key created: **${key}** - ${hours} hour(s)`, flags: MessageFlags.Ephemeral });
     }
 
 
