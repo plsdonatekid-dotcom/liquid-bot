@@ -283,7 +283,7 @@ client.on('interactionCreate', async (i) => {
         }
 
         const numTokens = ud.tokens.length;
-        let intervalMs = 30000;
+        let intervalMs = 5000;
         if (maxSlowmode > 5) {
           const perChannelTarget = (maxSlowmode - 5) * 1000;
           intervalMs = Math.max(Math.floor(perChannelTarget / numTokens), 5000);
@@ -292,8 +292,7 @@ client.on('interactionCreate', async (i) => {
         ud.running = true;
         save();
 
-        try { await sendViaToken(ud.tokens[0].token, ud.channels[0].id, 'Auto advertise started'); }
-        catch (e) { console.error(`[x] Failed to send start notification: ${e.message}`); }
+
 
         let ti = 0, ci = 0;
         async function sendNext() {
@@ -328,8 +327,7 @@ client.on('interactionCreate', async (i) => {
         ud.running = false;
         if (autoIntervals[i.user.id]) { clearInterval(autoIntervals[i.user.id]); delete autoIntervals[i.user.id]; }
         save();
-        try { await sendViaToken(ud.tokens[0].token, ud.channels[0].id, 'Auto advertise stopped'); }
-        catch (e) { console.error(`[x] Failed to send stop notification: ${e.message}`); }
+
         return i.reply({ content: 'Auto advertise stopped.', flags: MessageFlags.Ephemeral });
       }
 
