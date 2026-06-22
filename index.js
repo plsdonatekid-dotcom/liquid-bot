@@ -272,50 +272,46 @@ client.on('interactionCreate', async (i) => {
         if (!ud.msg) return i.reply({ content: 'No message. Use /setmsg first.', flags: MessageFlags.Ephemeral });
         if (autoIntervals[i.user.id]) return i.reply({ content: 'Already running. Use /stopauto first.', flags: MessageFlags.Ephemeral });
 
-        let maxSlowmode = 0;
-        for (const ch of ud.channels) {
-          try {
-            const sm = await getChannelSlowmode(ud.tokens[0].token, ch.id);
-            if (sm > maxSlowmode) maxSlowmode = sm;
-          } catch (e) {
-            console.error(`[x] Failed to get slowmode for ${ch.name}: ${e.message}`);
-          }
-        }
-
-        const numTokens = ud.tokens.length;
-        let intervalMs = 5000;
-        if (maxSlowmode > 5) {
-          const perChannelTarget = (maxSlowmode - 5) * 1000;
-          intervalMs = Math.max(Math.floor(perChannelTarget / numTokens), 5000);
-        }
-
         ud.running = true;
         save();
 
-
-
-        let ti = 0, ci = 0;
-        async function sendNext() {
-          if (!ud.running) {
-            if (autoIntervals[i.user.id]) { clearInterval(autoIntervals[i.user.id]); delete autoIntervals[i.user.id]; }
-            return;
-          }
-          const t = ud.tokens[ti];
-          const ch = ud.channels[ci];
-          if (!t || !ch) { ti = 0; ci = 0; return; }
+        const intervals = [];
+        for (const ch of ud.channels) {
+          let slowmode = 0;
           try {
-            await sendViaToken(t.token, ch.id, ud.msg);
-            console.log(`[+] ${i.user.id}: Sent via ${t.name} to ${ch.name}`);
+            slowmode = await getChannelSlowmode(ud.tokens[0].token, ch.id);
           } catch (e) {
-            console.error(`[x] ${i.user.id}: ${t.name} -> ${ch.name}: ${e.message}`);
+            console.error(`[x] Failed to get slowmode for ${ch.name}: ${e.message}`);
           }
-          ti = (ti + 1) % ud.tokens.length;
-          if (ti === 0) ci = (ci + 1) % ud.channels.length;
+
+          const numTokens = ud.tokens.length;
+          let intervalMs = 5000;
+          if (slowmode > 5) {
+            intervalMs = Math.max(Math.floor((slowmode - 5) * 1000 / numTokens), 5000);
+          }
+
+          let ti = 0;
+          async function sendToChannel() {
+            if (!ud.running) return;
+            const t = ud.tokens[ti];
+            if (t) {
+              try {
+                await sendViaToken(t.token, ch.id, ud.msg);
+                console.log(`[+] ${i.user.id}: Sent via ${t.name} to ${ch.name}`);
+              } catch (e) {
+                console.error(`[x] ${i.user.id}: ${t.name} -> ${ch.name}: ${e.message}`);
+              }
+              ti = (ti + 1) % numTokens;
+            }
+          }
+          const id = setInterval(sendToChannel, intervalMs);
+          intervals.push(id);
+          sendToChannel();
         }
-        await sendNext();
-        autoIntervals[i.user.id] = setInterval(sendNext, intervalMs);
+
+        autoIntervals[i.user.id] = intervals;
         await i.reply({
-          content: `Auto advertise started. (Slowmode: ${maxSlowmode}s, interval: ${intervalMs / 1000}s)`,
+          content: `Auto advertise started across ${ud.channels.length} channel(s).`,
           flags: MessageFlags.Ephemeral
         });
         return;
@@ -325,9 +321,9 @@ client.on('interactionCreate', async (i) => {
         const ud = getUserData(i.user.id);
         if (!autoIntervals[i.user.id]) return i.reply({ content: 'Auto advertise is not running.', flags: MessageFlags.Ephemeral });
         ud.running = false;
-        if (autoIntervals[i.user.id]) { clearInterval(autoIntervals[i.user.id]); delete autoIntervals[i.user.id]; }
+        for (const id of autoIntervals[i.user.id]) clearInterval(id);
+        delete autoIntervals[i.user.id];
         save();
-
         return i.reply({ content: 'Auto advertise stopped.', flags: MessageFlags.Ephemeral });
       }
 
