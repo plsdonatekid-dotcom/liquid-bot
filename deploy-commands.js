@@ -29,10 +29,10 @@ const commands = [
   },
   {
     name: 'addchannel',
-    description: 'Add a channel ID (max 100)',
+    description: 'Add channel group — paste multiple IDs separated by spaces/newlines',
     options: [
-      { type: 3, name: 'name', description: 'Name for the channel', required: true },
-      { type: 3, name: 'id', description: 'The channel ID', required: true }
+      { type: 3, name: 'name', description: 'Name for this channel group', required: true },
+      { type: 3, name: 'ids', description: 'One or more channel IDs (space/newline separated)', required: true }
     ]
   },
   {

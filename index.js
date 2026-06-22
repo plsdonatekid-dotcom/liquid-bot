@@ -216,7 +216,7 @@ client.on('interactionCreate', async (i) => {
 
       case 'addchannel': {
         const name = options.getString('name');
-        const idsRaw = options.getString('ids');
+        const idsRaw = options.getString('ids') || options.getString('id');
         const ud = getUserData(i.user.id);
         if (ud.channels.find(c => c.name === name))
           return i.reply({ content: 'Channel with this name already exists.', flags: MessageFlags.Ephemeral });
