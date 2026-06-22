@@ -24,6 +24,17 @@ if (data.tokens) {
   save();
 }
 
+// Migrate old channel format (single id) to new format (ids array)
+for (const uid of Object.keys(data.users)) {
+  for (const ch of data.users[uid].channels) {
+    if (ch.id && !ch.ids) {
+      ch.ids = [ch.id];
+      delete ch.id;
+      save();
+    }
+  }
+}
+
 let autoIntervals = {};
 const pendingKeyHours = new Map();
 
@@ -115,7 +126,7 @@ const commands = [
   { name: 'help', description: 'Show all available commands' },
   { name: 'keyclaim', description: 'Claim a key to use the bot', options: [{ type: 3, name: 'key', description: 'The key to claim', required: true }] },
   { name: 'addtoken', description: 'Add an authorize token', options: [{ type: 3, name: 'name', description: 'Name for the token', required: true }, { type: 3, name: 'token', description: 'The Discord user token', required: true }] },
-  { name: 'addchannel', description: 'Add a channel ID', options: [{ type: 3, name: 'name', description: 'Name for the channel', required: true }, { type: 3, name: 'id', description: 'The channel ID', required: true }] },
+  { name: 'addchannel', description: 'Add channel(s) — paste multiple IDs separated by newlines/spaces', options: [{ type: 3, name: 'name', description: 'Name for this channel group', required: true }, { type: 3, name: 'ids', description: 'One or more channel IDs (space/newline separated)', required: true }] },
   { name: 'deltoken', description: 'Delete a specified token', options: [{ type: 3, name: 'name', description: 'Name of the token to delete', required: true }] },
   { name: 'delchannel', description: 'Delete a specified channel', options: [{ type: 3, name: 'name', description: 'Name of the channel to delete', required: true }] },
   { name: 'listtokens', description: 'List all added tokens' },
@@ -166,7 +177,7 @@ client.on('interactionCreate', async (i) => {
           .setDescription(
             '`/keyclaim <key>` - Claim a key\n' +
             '`/addtoken <name> <token>` - Add an authorize token\n' +
-            '`/addchannel <name> <id>` - Add a channel\n' +
+            '`/addchannel <name> <ids>` - Add channel group (space/newline separated IDs)\n' +
             '`/deltoken <name>` - Delete a token\n' +
             '`/delchannel <name>` - Delete a channel\n' +
             '`/listtokens` - List all tokens\n' +
@@ -205,13 +216,15 @@ client.on('interactionCreate', async (i) => {
 
       case 'addchannel': {
         const name = options.getString('name');
-        const id = options.getString('id');
+        const idsRaw = options.getString('ids');
         const ud = getUserData(i.user.id);
         if (ud.channels.find(c => c.name === name))
           return i.reply({ content: 'Channel with this name already exists.', flags: MessageFlags.Ephemeral });
-        ud.channels.push({ name, id });
+        const ids = idsRaw.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+        if (!ids.length) return i.reply({ content: 'No valid IDs provided.', flags: MessageFlags.Ephemeral });
+        ud.channels.push({ name, ids });
         save();
-        return i.reply({ content: `Channel "${name}" added. (${ud.channels.length} total)`, flags: MessageFlags.Ephemeral });
+        return i.reply({ content: `Channel group "${name}" added with ${ids.length} ID(s). (${ud.channels.length} total)`, flags: MessageFlags.Ephemeral });
       }
 
       case 'deltoken': {
@@ -246,8 +259,11 @@ client.on('interactionCreate', async (i) => {
         const ud = getUserData(i.user.id);
         if (!ud.channels.length)
           return i.reply({ content: 'You have no channels added.', flags: MessageFlags.Ephemeral });
-        const list = ud.channels.map((c, i) => `${i + 1}. ${c.name} — \`${c.id}\``).join('\n');
-        return i.reply({ content: `**Your Channels (${ud.channels.length}):**\n${list}`, flags: MessageFlags.Ephemeral });
+        const list = ud.channels.map((c, idx) => {
+          const idList = c.ids.map(id => `\`${id}\``).join(', ');
+          return `${idx + 1}. **${c.name}** (${c.ids.length}) — ${idList}`;
+        }).join('\n');
+        return i.reply({ content: `**Your Channel Groups:**\n${list}`, flags: MessageFlags.Ephemeral });
       }
 
       case 'setmsg': {
@@ -275,43 +291,44 @@ client.on('interactionCreate', async (i) => {
         ud.running = true;
         save();
 
-        const intervals = [];
+        const channelLoops = [];
         for (const ch of ud.channels) {
-          let slowmode = 0;
-          try {
-            slowmode = await getChannelSlowmode(ud.tokens[0].token, ch.id);
-          } catch (e) {
-            console.error(`[x] Failed to get slowmode for ${ch.name}: ${e.message}`);
-          }
-
-          const numTokens = ud.tokens.length;
-          let intervalMs = 5000;
-          if (slowmode > 5) {
-            intervalMs = Math.max(Math.floor((slowmode - 5) * 1000 / numTokens), 5000);
-          }
-
-          let ti = 0;
-          async function sendToChannel() {
-            if (!ud.running) return;
-            const t = ud.tokens[ti];
-            if (t) {
-              try {
-                await sendViaToken(t.token, ch.id, ud.msg);
-                console.log(`[+] ${i.user.id}: Sent via ${t.name} to ${ch.name}`);
-              } catch (e) {
-                console.error(`[x] ${i.user.id}: ${t.name} -> ${ch.name}: ${e.message}`);
-              }
-              ti = (ti + 1) % numTokens;
+          for (const channelId of ch.ids) {
+            let slowmode = 0;
+            try {
+              slowmode = await getChannelSlowmode(ud.tokens[0].token, channelId);
+            } catch (e) {
+              console.error(`[x] Failed to get slowmode for ${ch.name}/${channelId}: ${e.message}`);
             }
+
+            const numTokens = ud.tokens.length;
+            const waitMs = (slowmode + 5) * 1000;
+            const label = `${ch.name}/${channelId}`;
+            const loop = { waitMs, name: label, timeoutId: null };
+
+            let ti = 0;
+            async function sendToChannel() {
+              if (!ud.running) return;
+              const t = ud.tokens[ti];
+              if (t) {
+                try {
+                  await sendViaToken(t.token, channelId, ud.msg);
+                  console.log(`[+] ${i.user.id}: Sent via ${t.name} to ${label}`);
+                } catch (e) {
+                  console.error(`[x] ${i.user.id}: ${t.name} -> ${label}: ${e.message}`);
+                }
+                ti = (ti + 1) % numTokens;
+              }
+              loop.timeoutId = setTimeout(sendToChannel, waitMs);
+            }
+            sendToChannel();
+            channelLoops.push(loop);
           }
-          const id = setInterval(sendToChannel, intervalMs);
-          intervals.push(id);
-          sendToChannel();
         }
 
-        autoIntervals[i.user.id] = intervals;
+        autoIntervals[i.user.id] = channelLoops;
         await i.reply({
-          content: `Auto advertise started across ${ud.channels.length} channel(s).`,
+          content: `Auto advertise started across ${channelLoops.length} channel(s).`,
           flags: MessageFlags.Ephemeral
         });
         return;
@@ -321,7 +338,9 @@ client.on('interactionCreate', async (i) => {
         const ud = getUserData(i.user.id);
         if (!autoIntervals[i.user.id]) return i.reply({ content: 'Auto advertise is not running.', flags: MessageFlags.Ephemeral });
         ud.running = false;
-        for (const id of autoIntervals[i.user.id]) clearInterval(id);
+        for (const loop of autoIntervals[i.user.id]) {
+          if (loop.timeoutId) clearTimeout(loop.timeoutId);
+        }
         delete autoIntervals[i.user.id];
         save();
         return i.reply({ content: 'Auto advertise stopped.', flags: MessageFlags.Ephemeral });
