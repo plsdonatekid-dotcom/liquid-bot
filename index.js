@@ -292,6 +292,7 @@ client.on('interactionCreate', async (i) => {
         save();
 
         const channelLoops = [];
+        let channelIndex = 0;
         for (const ch of ud.channels) {
           for (const channelId of ch.ids) {
             let slowmode = 0;
@@ -321,7 +322,8 @@ client.on('interactionCreate', async (i) => {
               }
               loop.timeoutId = setTimeout(sendToChannel, waitMs);
             }
-            sendToChannel();
+            loop.timeoutId = setTimeout(sendToChannel, channelIndex * 500);
+            channelIndex++;
             channelLoops.push(loop);
           }
         }
